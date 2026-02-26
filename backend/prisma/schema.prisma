@@ -108,11 +108,23 @@ model Pledge {
 }
 
 model RefreshToken {
+  id         String   @id @default(uuid())
+  userId     String
+  tokenHash  String
+  expiresAt  DateTime
+  revoked    Boolean  @default(false)
+  replacedBy String?  
+  userAgent  String?  
+  ipAddress  String?  
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+}
+
+model IdempotencyKey {
   id        String   @id @default(uuid())
+  key       String   @unique
   userId    String
-  tokenHash String
-  expiresAt DateTime
-  revoked   Boolean  @default(false)
-  user      User     @relation(fields: [userId], references: [id])
+  response  Json?
+  status    String   @default("PROCESSING")
   createdAt DateTime @default(now())
 }
