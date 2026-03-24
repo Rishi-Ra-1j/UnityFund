@@ -42,3 +42,9 @@ export interface UpdateCampaignBody{
 export interface DepositBody{
   amount: number
 }
+
+export interface CreateDonationBody{
+  campaignId:number
+  amount : number
+  idempotencyKey: string
+}

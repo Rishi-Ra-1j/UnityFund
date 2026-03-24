@@ -4,6 +4,7 @@ import cors from 'cors'
 import authRoutes from './routes/auth.routes'
 import campaignRoutes from './routes/campaign.routes'
 import walletRoutes from './routes/wallet.routes'
+import donationRoutes from './routes/donation.routes'
 const app = express()
 
 // ── Middleware ───────────────────────────────────────────────
@@ -14,6 +15,7 @@ app.use(express.json())
 app.use('/auth', authRoutes)
 app.use('/campaigns',campaignRoutes)
 app.use('/wallet',walletRoutes)
+app.use('/donations',donationRoutes)
 app.get('/health', (req, res) => {
   res.json({ status: 'Server is running' })
 })
