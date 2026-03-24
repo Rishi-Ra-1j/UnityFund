@@ -2,7 +2,8 @@ import 'dotenv/config'
 import express from 'express'
 import cors from 'cors'
 import authRoutes from './routes/auth.routes'
-
+import campaignRoutes from './routes/campaign.routes'
+import walletRoutes from './routes/wallet.routes'
 const app = express()
 
 // ── Middleware ───────────────────────────────────────────────
@@ -11,7 +12,8 @@ app.use(express.json())
 
 // ── Routes ───────────────────────────────────────────────────
 app.use('/auth', authRoutes)
-
+app.use('/campaigns',campaignRoutes)
+app.use('/wallet',walletRoutes)
 app.get('/health', (req, res) => {
   res.json({ status: 'Server is running' })
 })

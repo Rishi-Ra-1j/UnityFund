@@ -22,3 +22,23 @@ export interface ApiSuccess<T> {
 export interface ApiError {
   error: string
 }
+
+//campaign types
+export interface CreateCampaignBody{
+  title:string
+  description:string
+  goalAmount:number
+  deadline:string
+  imageUrl?:string
+}
+
+export interface UpdateCampaignBody{
+  title?: string
+  description?: string
+  goalAmount?: number
+  deadline?: string
+  imageUrl?: string
+}
+export interface DepositBody{
+  amount: number
+}
