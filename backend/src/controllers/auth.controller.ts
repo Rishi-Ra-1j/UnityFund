@@ -2,7 +2,7 @@ import { Request, Response } from 'express'
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import { PrismaClient } from '@prisma/client'
-
+import { AuthRequest } from '../types'
 const prisma = new PrismaClient()
 
 // ── SIGNUP ────────────────────────────────────────────────────
@@ -100,6 +100,43 @@ export const login = async (req: Request, res: Response): Promise<void> => {
 
   } catch (error) {
     console.error('Login error:', error)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+}
+// ── GET ME ────────────────────────────────────────────────────
+// GET /auth/me
+// Returns the currently logged in user's info
+export const getMe = async (
+  req: AuthRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: req.user!.userId },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        createdAt: true,
+        wallet: {
+          select: {
+            balance: true,
+            lockedBalance: true
+          }
+        }
+      }
+    })
+
+    if (!user) {
+      res.status(404).json({ error: 'User not found' })
+      return
+    }
+
+    res.json({ user })
+
+  } catch (error) {
+    console.error('Get me error:', error)
     res.status(500).json({ error: 'Internal server error' })
   }
 }
