@@ -5,7 +5,7 @@ import { AuthProvider } from './context/AuthContext'
 import LoginPage from './pages/LoginPage'
 import SignupPage from './pages/SignupPage'
 import HomePage from './pages/HomePage'
-
+import CampaignsPage from './pages/CampaignsPage'
 
 
 const AppRoutes = () => {
@@ -14,6 +14,7 @@ const AppRoutes = () => {
       <Route path="/" element={<HomePage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/signup" element={<SignupPage />} />
+      <Route path="/campaigns" element={<CampaignsPage/>}/>
     </Routes>
   )
 }
