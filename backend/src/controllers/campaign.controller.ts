@@ -230,3 +230,27 @@ export const deleteCampaign = async (
     res.status(500).json({ error: 'Internal server error' })
   }
 }
+
+// ── GET MY CAMPAIGNS ──────────────────────────────────────────
+// GET /campaigns/my
+// Returns all campaigns created by the logged in user
+export const getMyCampaigns = async (
+  req: AuthRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const campaigns = await prisma.campaign.findMany({
+      where: { creatorId: req.user!.userId },
+      include: {
+        _count: { select: { donations: true, comments: true } }
+      },
+      orderBy: { createdAt: 'desc' }
+    })
+
+    res.json({ campaigns })
+
+  } catch (error) {
+    console.error('Get my campaigns error:', error)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+}

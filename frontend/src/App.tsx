@@ -1,5 +1,7 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
+import CampaignPage from './pages/CampaignPage'
+import DashboardPage from './pages/DashboardPage'
 
 // Pages — we'll create these next
 import LoginPage from './pages/LoginPage'
@@ -15,6 +17,8 @@ const AppRoutes = () => {
       <Route path="/login" element={<LoginPage />} />
       <Route path="/signup" element={<SignupPage />} />
       <Route path="/campaigns" element={<CampaignsPage/>}/>
+      <Route path="/campaigns/:id" element={<CampaignPage/>}/>
+      <Route path="/dashboard" element={<DashboardPage/>}/>
     </Routes>
   )
 }

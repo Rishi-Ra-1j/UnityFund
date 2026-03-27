@@ -4,7 +4,8 @@ import {
   getCampaigns,
   getCampaignById,
   updateCampaign,
-  deleteCampaign
+  deleteCampaign,
+  getMyCampaigns
 } from '../controllers/campaign.controller'
 import { authMiddleware } from '../middleware/auth.middleware'
 
@@ -12,6 +13,7 @@ const router = Router()
 
 // Public routes — no auth needed
 router.get('/', getCampaigns)
+router.get('/my',authMiddleware,getMyCampaigns)
 router.get('/:id', getCampaignById)
 
 // Protected routes — auth required
