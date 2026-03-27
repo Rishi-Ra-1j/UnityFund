@@ -9,6 +9,7 @@ import CampaignsPage from './pages/CampaignsPage'
 import CampaignPage from './pages/CampaignPage'
 import DashboardPage from './pages/DashboardPage'
 import WalletPage from './pages/WalletPage'
+import CreateCampaignPage from './pages/CreateCampaignPage'
 
 const AppRoutes = () => {
   return (
@@ -20,6 +21,7 @@ const AppRoutes = () => {
       <Route path="/campaigns/:id" element={<CampaignPage/>}/>
       <Route path="/dashboard" element={<DashboardPage/>}/>
       <Route path="/wallet" element={<WalletPage/>}/>
+      <Route path="/campaign/new" element={<CreateCampaignPage/>} />
     </Routes>
   )
 }
