@@ -54,26 +54,49 @@ export const getCampaigns = async (
   res: Response
 ): Promise<void> => {
   try {
-    const campaigns = await prisma.campaign.findMany({
-      where: { status: CampaignStatus.ACTIVE },
-      select: {
-        id: true,
-        title: true,
-        description: true,
-        goalAmount: true,
-        currentAmount: true,
-        deadline: true,
-        imageUrl: true,
-        status: true,
-        createdAt: true,
-        creator: {
-          select: { id: true, name: true }
-        }
-      },
-      orderBy: { createdAt: 'desc' }
-    })
+    // Pagination params from query string
+    // GET /campaigns?page=1&limit=10
+    const page = Math.max(1, parseInt(req.query['page'] as string) || 1)
+    const limit = Math.min(50, parseInt(req.query['limit'] as string) || 10)
+    const skip = (page - 1) * limit
 
-    res.json({ campaigns })
+    const [campaigns, total] = await Promise.all([
+      prisma.campaign.findMany({
+        where: { status: CampaignStatus.ACTIVE },
+        select: {
+          id: true,
+          title: true,
+          description: true,
+          goalAmount: true,
+          currentAmount: true,
+          deadline: true,
+          imageUrl: true,
+          status: true,
+          createdAt: true,
+          creator: {
+            select: { id: true, name: true }
+          }
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit
+      }),
+      prisma.campaign.count({
+        where: { status: CampaignStatus.ACTIVE }
+      })
+    ])
+
+    res.json({
+      campaigns,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+        hasNext: page * limit < total,
+        hasPrev: page > 1
+      }
+    })
 
   } catch (error) {
     console.error('Get campaigns error:', error)

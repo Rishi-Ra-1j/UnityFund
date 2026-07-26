@@ -8,6 +8,7 @@ import donationRoutes from './routes/donation.routes'
 import adminRoutes from './routes/admin.routes'
 import commentRoutes from './routes/comment.routes'
 import campaignUpdateRoutes from './routes/campaignUpdate.routes'
+import { startCronJobs } from './cron/campaignResolver'
 const app = express()
 
 // ── Middleware ───────────────────────────────────────────────
@@ -31,4 +32,5 @@ const PORT = process.env.PORT || 5000
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`)
+  startCronJobs()
 })

@@ -1,12 +1,10 @@
 import { Response } from 'express'
 import { PrismaClient, CampaignStatus, TransactionType, DonationStatus } from '@prisma/client'
+import { Decimal } from 'decimal.js'
 import { AuthRequest, CreateDonationBody } from '../types'
 
 const prisma = new PrismaClient()
 
-// ── CREATE DONATION ───────────────────────────────────────────
-// POST /donations
-// Auth required — logged in users only
 export const createDonation = async (
   req: AuthRequest,
   res: Response
@@ -26,8 +24,8 @@ export const createDonation = async (
       return
     }
 
-    // 2. Check idempotency — if this key was already used, return
-    // the original donation silently. Duplicate request, not an error.
+    // 2. Idempotency check — outside transaction is fine here
+    // because we're only reading, not writing
     const existingDonation = await prisma.donation.findUnique({
       where: { idempotencyKey }
     })
@@ -40,7 +38,8 @@ export const createDonation = async (
       return
     }
 
-    // 3. Find the campaign
+    // 3. Check campaign exists and is active — outside transaction
+    // We'll re-verify inside with a lock
     const campaign = await prisma.campaign.findUnique({
       where: { id: campaignId }
     })
@@ -50,111 +49,171 @@ export const createDonation = async (
       return
     }
 
-    // 4. Campaign must be ACTIVE to accept donations
     if (campaign.status !== CampaignStatus.ACTIVE) {
       res.status(400).json({ error: 'Campaign is not accepting donations' })
       return
     }
 
-    // 5. Campaign must not be past deadline
     if (campaign.deadline < new Date()) {
       res.status(400).json({ error: 'Campaign deadline has passed' })
       return
     }
 
-    // 6. Find donor's wallet
-    const wallet = await prisma.wallet.findUnique({
-      where: { userId: req.user!.userId }
-    })
+    // 4. Everything from here runs inside a transaction with row locks
+    // This prevents race conditions on both wallet and campaign
+    const result = await prisma.$transaction(async (tx) => {
 
-    if (!wallet) {
-      res.status(404).json({ error: 'Wallet not found' })
-      return
-    }
+      // ── Lock the wallet row ──────────────────────────────────
+      // SELECT FOR UPDATE locks this row until transaction commits
+      // Any concurrent donation from same wallet must wait here
+      const walletRows = await tx.$queryRaw<Array<{
+        id: number
+        balance: string
+        lockedBalance: string
+        userId: number
+      }>>`
+        SELECT id, balance, "lockedBalance", "userId"
+        FROM "Wallet"
+        WHERE "userId" = ${req.user!.userId}
+        FOR UPDATE
+      `
 
-    // 7. Check donor has enough balance
-    if (Number(wallet.balance) < amount) {
-      res.status(400).json({ error: 'Insufficient balance' })
-      return
-    }
+      if (walletRows.length === 0) {
+        throw new Error('WALLET_NOT_FOUND')
+      }
 
-    // 8. Handle overfunding — only accept what the campaign still needs
-    // Example: goal=5000, currentAmount=4800, someone donates 500
-    // We only take 200, not 500
-    const remaining = Number(campaign.goalAmount) - Number(campaign.currentAmount)
+      const walletRow = walletRows[0]
 
-    if (remaining <= 0) {
-      res.status(400).json({ error: 'Campaign is already fully funded' })
-      return
-    }
+      // ── Use Decimal for safe money comparison ────────────────
+      // Decimal.js avoids floating point precision issues
+      const walletBalance = new Decimal(walletRow.balance)
+      const donationAmount = new Decimal(amount)
 
-    // The actual amount we will accept
-    const acceptedAmount = Math.min(amount, remaining)
-    // The excess we immediately return (0 if no overfunding)
-    const refundedAmount = amount - acceptedAmount
+      if (walletBalance.lessThan(donationAmount)) {
+        throw new Error('INSUFFICIENT_BALANCE')
+      }
 
-    // 9. Everything checks out — run the full donation atomically
-    const donation = await prisma.$transaction(async (tx) => {
+      // ── Lock the campaign row ────────────────────────────────
+      // Prevents overfunding race condition
+      const campaignRows = await tx.$queryRaw<Array<{
+        id: number
+        currentAmount: string
+        goalAmount: string
+        status: string
+      }>>`
+        SELECT id, "currentAmount", "goalAmount", status
+        FROM "Campaign"
+        WHERE id = ${campaignId}
+        FOR UPDATE
+      `
 
-      // a. Create the donation record
+      if (campaignRows.length === 0) {
+        throw new Error('CAMPAIGN_NOT_FOUND')
+      }
+
+      const campaignRow = campaignRows[0]
+
+      // ── Re-verify campaign is still active after lock ────────
+      if (campaignRow.status !== CampaignStatus.ACTIVE) {
+        throw new Error('CAMPAIGN_NOT_ACTIVE')
+      }
+
+      // ── Calculate accepted amount using Decimal ──────────────
+      const currentAmount = new Decimal(campaignRow.currentAmount)
+      const goalAmount = new Decimal(campaignRow.goalAmount)
+      const remaining = goalAmount.minus(currentAmount)
+
+      if (remaining.lessThanOrEqualTo(0)) {
+        throw new Error('CAMPAIGN_FULLY_FUNDED')
+      }
+
+      // Only accept what the campaign still needs
+      const acceptedAmount = Decimal.min(donationAmount, remaining)
+      const refundedAmount = donationAmount.minus(acceptedAmount)
+
+      // ── Create donation record ───────────────────────────────
       const newDonation = await tx.donation.create({
         data: {
           donorId: req.user!.userId,
           campaignId,
-          amount: acceptedAmount,
+          amount: acceptedAmount.toNumber(),
           idempotencyKey,
           status: DonationStatus.HELD
         }
       })
 
-      // b. Deduct from donor's balance, add to lockedBalance
+      // ── Update wallet: deduct from balance, add to locked ────
       await tx.wallet.update({
-        where: { id: wallet.id },
+        where: { id: walletRow.id },
         data: {
-          balance: { decrement: acceptedAmount },
-          lockedBalance: { increment: acceptedAmount }
+          balance: { decrement: acceptedAmount.toNumber() },
+          lockedBalance: { increment: acceptedAmount.toNumber() }
         }
       })
 
-      // c. Log the donation in wallet transactions
+      // ── Log wallet transaction ───────────────────────────────
       await tx.walletTransaction.create({
         data: {
-          walletId: wallet.id,
+          walletId: walletRow.id,
           type: TransactionType.DONATION,
-          amount: acceptedAmount,
+          amount: acceptedAmount.toNumber(),
           description: `Donation to campaign: ${campaign.title}`,
           referenceId: newDonation.id
         }
       })
 
-      // d. Increase campaign's currentAmount
+      // ── Update campaign current amount ───────────────────────
       await tx.campaign.update({
         where: { id: campaignId },
         data: {
-          currentAmount: { increment: acceptedAmount }
+          currentAmount: { increment: acceptedAmount.toNumber() }
         }
       })
 
-      return newDonation
+      return {
+        donation: newDonation,
+        acceptedAmount: acceptedAmount.toNumber(),
+        refundedAmount: refundedAmount.toNumber()
+      }
     })
 
-    // 10. Build the response message
-    // Tell the donor if their amount was adjusted due to overfunding
-    const message = refundedAmount > 0
-      ? `Donation accepted. ${acceptedAmount} donated, ${refundedAmount} was not needed and not charged.`
+    const message = result.refundedAmount > 0
+      ? `Donation accepted. ₹${result.acceptedAmount} donated, ₹${result.refundedAmount} was not needed.`
       : 'Donation successful'
 
-    res.status(201).json({ message, donation })
+    res.status(201).json({ message, donation: result.donation })
 
   } catch (error) {
+    // Handle specific errors thrown inside transaction
+    if (error instanceof Error) {
+      if (error.message === 'INSUFFICIENT_BALANCE') {
+        res.status(400).json({ error: 'Insufficient balance' })
+        return
+      }
+      if (error.message === 'CAMPAIGN_NOT_FOUND') {
+        res.status(404).json({ error: 'Campaign not found' })
+        return
+      }
+      if (error.message === 'CAMPAIGN_NOT_ACTIVE') {
+        res.status(400).json({ error: 'Campaign is not accepting donations' })
+        return
+      }
+      if (error.message === 'CAMPAIGN_FULLY_FUNDED') {
+        res.status(400).json({ error: 'Campaign is already fully funded' })
+        return
+      }
+      if (error.message === 'WALLET_NOT_FOUND') {
+        res.status(404).json({ error: 'Wallet not found' })
+        return
+      }
+    }
+
     console.error('Donation error:', error)
     res.status(500).json({ error: 'Internal server error' })
   }
 }
 
 // ── GET MY DONATIONS ──────────────────────────────────────────
-// GET /donations
-// Returns the logged in user's donation history
 export const getMyDonations = async (
   req: AuthRequest,
   res: Response
