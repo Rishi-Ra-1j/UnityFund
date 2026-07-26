@@ -1,4 +1,4 @@
-import { Request } from 'express'
+import type { Request } from 'express'
 
 // JWT payload shape — what we store inside every token
 export interface JwtPayload {
