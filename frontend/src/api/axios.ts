@@ -2,7 +2,7 @@ import axios from 'axios'
 
 // Base URL points to our backend
 const api = axios.create({
-  baseURL: 'http://localhost:5000',
+  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:5000',
 })
 
 // Interceptor — automatically adds JWT token to every request
